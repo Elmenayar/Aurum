@@ -1,0 +1,144 @@
+{
+  "entities": {
+    "Broker": {
+      "title": "Broker",
+      "description": "Real estate broker registration details",
+      "type": "object",
+      "properties": {
+        "brokerName": { "type": "string", "description": "Full name of the broker" },
+        "companyName": { "type": "string", "description": "Company name" },
+        "email": { "type": "string", "format": "email", "description": "Email address" },
+        "phone": { "type": "string", "description": "Phone number" },
+        "notes": { "type": "string", "description": "Additional notes" },
+        "source": { 
+          "type": "string", 
+          "enum": ["website", "excel_import", "google_sheet_import"],
+          "description": "Where the broker record originated" 
+        },
+        "status": { 
+          "type": "string", 
+          "enum": ["New", "Active", "Inactive", "VIP"],
+          "description": "Operational status" 
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["brokerName", "phone", "email", "source", "status", "createdAt", "updatedAt"]
+    },
+    "Lead": {
+      "title": "Lead",
+      "description": "Potential client assigned to a broker",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "projectId": { "type": "string" },
+        "status": { "type": "string", "enum": ["interested", "contacted", "negotiation", "closed", "lost"] },
+        "brokerId": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "phone", "projectId", "status", "brokerId", "createdAt", "updatedAt"]
+    },
+    "Inquiry": {
+      "title": "Inquiry",
+      "description": "Client contact inquiry from the website",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "message": { "type": "string" },
+        "projectId": { "type": "string" },
+        "projectName": { "type": "string" },
+        "status": { "type": "string", "enum": ["new", "contacted", "resolved"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "phone", "email", "message", "status", "createdAt"]
+    },
+    "AppConfig": {
+      "title": "AppConfig",
+      "description": "Global application settings",
+      "type": "object",
+      "properties": {
+        "emailNotificationsEnabled": { "type": "boolean" },
+        "adminEmail": { "type": "string", "format": "email" }
+      },
+      "required": ["emailNotificationsEnabled"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "Log of broker actions on leads",
+      "type": "object",
+      "properties": {
+        "brokerId": { "type": "string" },
+        "brokerName": { "type": "string" },
+        "leadId": { "type": "string" },
+        "leadName": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["brokerId", "action", "createdAt"]
+    },
+    "SiteContent": {
+      "title": "SiteContent",
+      "description": "Customizable text and assets for the website",
+      "type": "object",
+      "properties": {
+        "value": { "type": "string", "description": "The content value (text or URL)" },
+        "updatedBy": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["value", "updatedAt"]
+    },
+    "TeamMember": {
+      "title": "TeamMember",
+      "description": "Member of the company team",
+      "type": "object",
+      "properties": {
+        "nameAr": { "type": "string" },
+        "nameEn": { "type": "string" },
+        "roleAr": { "type": "string" },
+        "roleEn": { "type": "string" },
+        "image": { "type": "string" },
+        "bioAr": { "type": "string" },
+        "bioEn": { "type": "string" },
+        "order": { "type": "integer" }
+      },
+      "required": ["nameAr", "nameEn", "roleAr", "roleEn", "image", "order"]
+    }
+  },
+  "firestore": {
+    "/site_content/{contentId}": {
+      "schema": "SiteContent",
+      "description": "Dynamic website content like text, logo URL, etc."
+    },
+    "/config/global": {
+      "schema": "AppConfig",
+      "description": "Global settings document"
+    },
+    "/activity_logs/{logId}": {
+      "schema": "ActivityLog",
+      "description": "Record of broker activities"
+    },
+    "/brokers/{brokerId}": {
+      "schema": "Broker",
+      "description": "Collection of registered brokers"
+    },
+    "/leads/{leadId}": {
+      "schema": "Lead",
+      "description": "Leads assigned to brokers"
+    },
+    "/inquiries/{inquiryId}": {
+      "schema": "Inquiry",
+      "description": "Customer inquiries from contact form"
+    },
+    "/team/{memberId}": {
+      "schema": "TeamMember",
+      "description": "Company team members"
+    }
+  }
+}

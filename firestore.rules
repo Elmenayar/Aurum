@@ -1,0 +1,192 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function isAdmin() { 
+      return isSignedIn() && (
+        request.auth.token.email == 'elmenayar123@gmail.com' || // Bootstrapped Super Admin
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'elmenayar123@gmail.com' ||
+        (exists(/databases/$(database)/documents/admins/$(request.auth.uid)) && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.isSuperAdmin == true)
+      );
+    }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    // --- Entity Validations ---
+
+    function isValidBroker(data) {
+      return data.keys().hasAll(['brokerName', 'phone', 'email', 'source', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().size() <= 15
+        && data.brokerName is string && data.brokerName.size() <= 100
+        && data.phone is string && data.phone.size() <= 20
+        && data.email is string && data.email.size() <= 100
+        && data.source in ['website', 'excel_import', 'google_sheet_import']
+        && data.status in ['New', 'Active', 'Inactive', 'VIP']
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function isValidLead(data) {
+      return data.keys().hasAll(['name', 'phone', 'projectId', 'status', 'brokerId', 'brokerEmail', 'createdAt', 'updatedAt'])
+        && data.keys().size() <= 11
+        && data.name is string && data.name.size() <= 100
+        && data.phone is string && data.phone.size() <= 20
+        && data.projectId is string && data.projectId.size() <= 100
+        && data.status in ['interested', 'contacted', 'negotiation', 'closed', 'lost']
+        && data.brokerEmail == request.auth.token.email
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function isValidInquiry(data) {
+      return data.keys().hasAll(['name', 'phone', 'email', 'message', 'status', 'createdAt'])
+        && data.keys().size() <= 8
+        && data.name is string && data.name.size() <= 100
+        && data.phone is string && data.phone.size() <= 20
+        && data.email is string && data.email.size() <= 100
+        && data.message is string && data.message.size() <= 2000
+        && data.status == 'new'
+        && data.createdAt == request.time;
+    }
+
+    function isValidActivityLog(data) {
+      return data.keys().hasAll(['brokerId', 'action', 'createdAt'])
+        && data.keys().size() <= 7
+        && data.brokerId == request.auth.uid
+        && data.action is string && data.action.size() <= 100
+        && data.createdAt == request.time;
+    }
+
+    function isValidProject(data) {
+      return data.keys().hasAll(['titleAr', 'locationAr', 'type', 'image'])
+        && data.keys().size() <= 20
+        && data.titleAr is string && data.titleAr.size() <= 500
+        && data.locationAr is string && data.locationAr.size() <= 500
+        && data.type in ['residential', 'commercial', 'office', 'retail']
+        && data.image is string && data.image.size() <= 1000000;
+    }
+
+    function isValidTeamMember(data) {
+      return data.keys().hasAll(['nameAr', 'nameEn', 'roleAr', 'roleEn', 'image', 'order'])
+        && data.keys().size() <= 12
+        && data.nameAr is string && data.nameAr.size() <= 200
+        && data.nameEn is string && data.nameEn.size() <= 200
+        && data.roleAr is string && data.roleAr.size() <= 200
+        && data.roleEn is string && data.roleEn.size() <= 200
+        && data.image is string && data.image.size() <= 1000000
+        && data.order is int;
+    }
+
+    function isValidStaffMember(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'permissions', 'createdAt'])
+        && data.keys().size() <= 7
+        && data.uid is string
+        && data.email is string
+        && data.displayName is string
+        && data.permissions is list;
+    }
+
+    function isValidSiteContent(data) {
+      return data.keys().hasAll(['value', 'updatedAt', 'updatedBy'])
+        && data.keys().size() <= 3
+        && data.value is string && data.value.size() <= 1000000
+        && data.updatedBy is string && data.updatedBy.size() <= 200
+        && data.updatedAt == request.time;
+    }
+
+    // --- Collection Routes ---
+
+    // 1. Site Content: Public read, Admin write
+    match /site_content/{contentId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin() && isValidSiteContent(incoming());
+    }
+
+    // 2. Global Config: Authenticated read, Admin write
+    match /config/global {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // 3. Activity Logs: Brokers can create (write-only), Admins can read
+    match /activity_logs/{logId} {
+      allow get: if isAdmin() || (isSignedIn() && existing().brokerId == request.auth.uid);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.brokerId == request.auth.uid);
+      allow create: if isVerified() && isValidActivityLog(incoming());
+      allow update, delete: if isAdmin();
+    }
+
+    // 4. Brokers: Users manage own profile, Admins full access
+    match /brokers/{brokerId} {
+      allow get: if isAdmin() || (isSignedIn() && existing().email == request.auth.token.email);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.email == request.auth.token.email);
+      allow create: if isValidBroker(incoming()) && (
+        isAdmin() || 
+        (isSignedIn() && incoming().email == request.auth.token.email && incoming().status == 'New')
+      );
+      allow update: if (isAdmin() || (isSignedIn() && existing().email == request.auth.token.email)) 
+        && (
+          // Broker updates own basic info but NOT status/source
+          (isSignedIn() && existing().email == request.auth.token.email && incoming().diff(existing()).affectedKeys().hasOnly(['brokerName', 'companyName', 'phone', 'email', 'notes', 'websiteUrl', 'linkedinUrl', 'twitterUrl', 'updatedAt']) && incoming().updatedAt == request.time)
+          || isAdmin()
+        );
+      allow delete: if isAdmin();
+    }
+
+    // 5. Leads: Tied to Broker Identity
+    match /leads/{leadId} {
+      allow get, update, delete: if isAdmin() || (isSignedIn() && existing().brokerEmail == request.auth.token.email);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.brokerEmail == request.auth.token.email);
+      allow create: if isVerified() && isValidLead(incoming());
+    }
+
+    // 6. Inquiries: Public create, Admin read/write
+    match /inquiries/{inquiryId} {
+      allow create: if isValidInquiry(incoming());
+      allow read, update, delete: if isAdmin();
+    }
+
+    // 7. Projects: Public read, Admin write
+    match /projects/{projectId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidProject(incoming()) 
+        && incoming().createdAt == request.time 
+        && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidProject(incoming()) 
+        && (incoming().keys().hasAll(['createdAt']) ? incoming().createdAt == existing().createdAt : true)
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    // 8. Team: Public read, Admin write
+    match /team/{memberId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidTeamMember(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidTeamMember(incoming())
+        && (incoming().keys().hasAll(['createdAt']) ? incoming().createdAt == existing().createdAt : true)
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+    // 9. Staff/Admins: Only SuperAdmins can manage staff
+    match /admins/{adminId} {
+      allow read: if isAdmin();
+      allow write: if isSuperAdmin() && isValidStaffMember(incoming());
+    }
+  }
+}
